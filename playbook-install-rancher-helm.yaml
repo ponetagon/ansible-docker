@@ -1,0 +1,159 @@
+- name: Config all Host
+  hosts: all
+
+  tasks:
+    - name: Aptitude update
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - snmpd
+          - chrony
+
+    - name: Set timezone to Asia/Bangkok
+      shell: timedatectl set-timezone Asia/Bangkok
+
+    - name: Comment out the pool directive in chrony.conf
+      shell: sed -i 's/pool/#pool/g' /etc/chrony/chrony.conf
+
+    - name: Set server directive in chrony.conf
+      shell: sed -i 's/#pool 2.ubuntu.#pool.ntp.org iburst maxsources 2/server clock.inet.co.th/g' /etc/chrony/chrony.conf
+
+    - name: Restart Chrony service
+      shell: systemctl restart chrony
+    
+    - name: Disable Swap
+      shell: swapoff -a 
+     
+    - name: Disable Swap in fstab 
+      shell: sed -ri '/\sswap\s/s/^#?/#/' /etc/fstab
+
+    - name: Set snmp community string
+      shell: echo "rocommunity  ols-monitor " >> /etc/snmp/snmpd.conf
+
+    - name: Restart service SNMP
+      shell: systemctl restart snmpd
+
+- name: Rancher
+  hosts: rancher-server
+  #  become: yes
+
+  vars_prompt:
+    - name: domain
+      prompt: "Do you want to run Rancher domain? (yes/no)"
+      private: no
+      default: "no"
+
+    - name: hostname
+      prompt: "Please enter the Rancher URL"
+      private: no
+      default: ""
+
+  tasks:
+    - name: Add domain rancher
+      lineinfile:
+        path: /etc/hosts  # Replace this with the actual file path
+        line: "127.0.0.1 {{ hostname }}"
+        state: present
+      when: domain == 'yes'
+
+    - name: Install rancher rke2
+      shell: curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL="v1.24" sh -
+
+    - name: Enable rancher
+      shell: systemctl enable rke2-server.service
+
+    - name: Restart rancher
+      shell: systemctl restart rke2-server.service
+
+    - name: Install kubectl
+      shell: curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" 
+      
+    - name: Install kubectl2 
+      shell: sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+    - name: Create dir .kube
+      shell: mkdir -p ~/.kube
+
+    - name: Copy kubeconfig
+      shell: sudo cp /etc/rancher/rke2/rke2.yaml ~/.kube/config
+
+    - name: KUBECONFIG
+      shell: export KUBECONFIG=$HOME/.kube/config
+
+    - name: Check Node
+      shell: kubectl get node
+
+    - name: Install helm
+      shell: curl -#L https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+    - name: install repo
+      shell: helm repo add rancher-stable https://releases.rancher.com/server-charts/stable
+    
+    - name: install repo2
+      shell: helm repo add jetstack https://charts.jetstack.io
+      #      when: domain == 'yes'
+
+    - name: Install cert-manager
+      shell: helm install cert-manager jetstack/cert-manager --namespace cert-manager --version v1.11.0 --set installCRDs=tru --create-namespace
+      #community.kubernetes.helm:
+      #  name: cert-manager
+      #  chart_repo: jetstack/cert-manager
+      #  namespace: cert-manager
+      #  version: v1.11.0
+      #  values:
+      #    installCRDs: true
+      #  create_namespace: yes
+        #      when: domain == 'yes'  
+      ignore_errors: yes
+      
+    - name: Install Rancher Helm Chart
+      community.kubernetes.helm:
+        name: rancher
+        chart_repo: rancher-stable/rancher
+        namespace: cattle-system
+        values:
+          hostname: "{{ hostname }}"
+          bootstrapPassword: installrancherforcustomer
+          replicas: 1
+          ingress.tls.source: letsEncrypt
+          letsEncrypt.email: me@example.org
+          letsEncrypt.ingress.class: nginx
+        version: 2.7.4
+        create_namespace: yes
+      when: domain == 'yes'  
+      ignore_errors: yes
+
+    - name: Install Rancher Helm Chart without domain
+      shell: helm install rancher rancher-stable/rancher --namespace cattle-system  --set replicas=1 --version 2.7.4 --create-namespace --set ingress.enabled=false
+      when: domain == 'no'
+      ignore_errors: yes  
+
+    - name: Expose deployment rancher
+      shell: kubectl expose deploy rancher --type NodePort --port 443 -n cattle-system --name rancher-443
+      when: domain == 'no'
+
+- name: Install nfs-common on worker
+  hosts: worker
+  become: yes
+  tasks:
+    - name: Aptitude update
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+          - nfs-common

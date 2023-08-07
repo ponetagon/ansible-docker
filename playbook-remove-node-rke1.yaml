@@ -1,0 +1,18 @@
+- name: Delete master, worker
+  hosts: master, worker
+
+  tasks:
+
+    - name: Delete all container
+      shell: docker rm -f $(docker ps -qa)
+
+    - name: Delete all images
+      shell: docker rmi -f $(docker images -q)
+
+    - name: Delete all volume
+      shell: docker volume rm $(docker volume ls -q)
+
+    - name: Remove all path 
+      shell: rm -rf /etc/ceph /etc/cni /etc/kubernetes /etc/rancher /opt/cni /opt/rke /run/secrets/kubernetes.io /run/calico /run/flannel /var/lib/calico /var/lib/etcd /var/lib/cni /var/lib/kubelet /var/lib/rancher /var/log/containers /var/log/kube-audit /var/log/pods /var/run/calico /dev/null 2>&1
+      #warn: false
+

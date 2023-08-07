@@ -1,0 +1,12 @@
+- name: Delete master, worker
+  hosts: master, worker
+
+  tasks:
+
+    - name: uninstall rancher agent
+      shell: ./usr/local/bin/rancher-system-agent-uninstall.sh
+
+    - name: uninstall
+      shell: ./usr/local/bin/rke2-uninstall.sh
+
+

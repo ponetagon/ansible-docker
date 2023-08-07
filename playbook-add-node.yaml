@@ -1,7 +1,12 @@
 - name: Config all Host
-  hosts: all
-  #become: yes
-  #become_user: root
+  hosts: master, worker
+
+  vars_prompt:
+    - name: rke
+      prompt: "What rke version? (rke1,rke2) "
+      private: no
+      default: "rke1"
+
   tasks:
     - name: Aptitude update
       apt:
@@ -44,21 +49,9 @@
     - name: Restart service SNMP
       shell: systemctl restart snmpd
 
-- name: Rancher
-  hosts: rancher-server
-  become: yes
-  #  become_user: root
-
-  vars_prompt:
-    - name: "ssl_option"
-      prompt: "Do you want to run Rancher with SSL? (yes/no)"
-      private: no
-      default: "no"
-
-  tasks: 
-
     - name: Install Docker
       shell: curl -s https://releases.rancher.com/install-docker/20.10.sh | sh
+      when: rke == 'rke1'
 
     - name: Cache Docker
       copy:
@@ -67,16 +60,7 @@
             "registry-mirrors": ["https://ols-dockerhubcache.dedyn.io"]
           }
         dest: /etc/docker/daemon.json
-
-    - name: Deploy rancher without ssl
-      shell: docker run -d --restart=unless-stopped --name rancher -p 80:80 -p 443:443 --privileged rancher/rancher:v2.6.9
-      when: ssl_option == 'no'
-      ignore_errors: yes
-
-    - name: Deploy rancher with ssl
-      shell: docker run -d --restart=unless-stopped --name rancher -p 80:80 -p 443:443 --privileged -v /opt/rancher:/var/lib/rancher -v /var/log/rancher/auditlog:/var/log/auditlog -v /root/rancher/ssl/cert.pem:/etc/rancher/ssl/cert.pem  -v /root/rancher/ssl/key.pem:/etc/rancher/ssl/key.pem -v /etc/localtime:/etc/localtime:ro -e AUDIT_LEVEL=1 rancher/rancher:v2.6.9 --no-cacerts
-      when: ssl_option == 'yes'
-      ignore_errors: yes
+      when: rke == 'rke1'
 
 - name: Install nfs-common on worker
   hosts: worker

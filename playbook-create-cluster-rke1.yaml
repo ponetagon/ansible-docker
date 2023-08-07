@@ -1,0 +1,73 @@
+- name: Rancher
+  hosts: rancher-server
+  become: yes
+
+  vars_prompt:
+    - name: rancher_url
+      prompt: "Please enter Rancher URL (please enter with https:// )"
+      private: no
+    - name: api_token
+      prompt: "Please enter api token for Rancher"
+      private: yes
+    - name: cluster
+      prompt: "Please enter Cluster Name"
+      private: no
+     
+
+  tasks:
+    - name: Install RancherCLI
+      shell: wget https://releases.rancher.com/cli2/v2.7.0/rancher-linux-amd64-v2.7.0.tar.gz && tar -zxvf rancher-linux-amd64-v2.7.0.tar.gz 
+
+    - name: Login Rancher server
+      shell: "./rancher-v2.7.0/rancher login '{{ rancher_url }}' --token '{{ api_token }}' --skip-verify"
+
+    - name: Create cluster
+      shell: "./rancher-v2.7.0/rancher clusters create '{{ cluster }}'"
+
+    - name: Get command join master
+      shell: "./rancher-v2.7.0/rancher clusters add-node --etcd --controlplane '{{ cluster }}'"
+      register: master_output
+      delegate_to: rancher-server
+
+    - name: Set fact for master output
+      set_fact:
+        master_output: "{{ master_output.stdout }}"
+      delegate_to: rancher-server
+
+    - name: Get command join worker
+      shell: "./rancher-v2.7.0/rancher clusters add-node --worker '{{ cluster }}'"
+      register: worker_output
+      delegate_to: rancher-server
+
+    - name: Set fact for worker output
+      set_fact:
+        worker_output: "{{ worker_output.stdout }}"
+      delegate_to: rancher-server
+
+- name: Deploy tasks on master node
+  hosts: master
+  tasks:
+    - name: Use the output of master command
+      debug:
+        var: hostvars['rancher-server']['master_output']
+    
+    - name: Install Docker
+      shell: curl -s https://releases.rancher.com/install-docker/20.10.sh | sh     
+      ignore_errors: yes
+
+    - name: Run command join master node
+      shell: "{{ hostvars['rancher-server']['master_output'] }}"
+
+- name: Deploy tasks on worker node
+  hosts: worker
+  tasks:
+    - name: Use the output of worker command
+      debug:
+        var: hostvars['rancher-server']['worker_output']
+
+    - name: Install Docker
+      shell: curl -s https://releases.rancher.com/install-docker/20.10.sh | sh    
+      ignore_errors: yes
+
+    - name: Run command join master node
+      shell: "{{ hostvars['rancher-server']['worker_output'] }}"
