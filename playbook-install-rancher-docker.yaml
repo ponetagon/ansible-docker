@@ -70,7 +70,25 @@
     - name: Deploy rancher without ssl
       shell: docker run -d --restart=unless-stopped --name rancher -p 80:80 -p 443:443 --privileged rancher/rancher:v2.6.9
       when: ssl_option == 'no'
+      ignore_errors: yes
 
     - name: Deploy rancher with ssl
       shell: docker run -d --restart=unless-stopped --name rancher -p 80:80 -p 443:443 --privileged -v /opt/rancher:/var/lib/rancher -v /var/log/rancher/auditlog:/var/log/auditlog -v /root/rancher/ssl/cert.pem:/etc/rancher/ssl/cert.pem  -v /root/rancher/ssl/key.pem:/etc/rancher/ssl/key.pem -v /etc/localtime:/etc/localtime:ro -e AUDIT_LEVEL=1 rancher/rancher:v2.6.9 --no-cacerts
       when: ssl_option == 'yes'
+      ignore_errors: yes
+
+- name: Install nfs-common on worker
+  hosts: worker
+  become: yes
+  tasks:
+    - name: Aptitude update
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+          - nfs-common
